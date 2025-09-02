@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>煙火模擬器｜Fireworks Simulator (Clean Build)</title>
+  <style>
+    :root {
+      --panel-bg: rgba(15, 17, 26, 0.7);
+      --panel-stroke: rgba(255,255,255,0.1);
+      --text: #eef2ff;
+      --muted: #aab0c0;
+      --accent: #8b5cf6;
+      --accent-2: #06b6d4;
+      --btn-bg: #111827;
+      --btn-bg-2: #0b1220;
+      --btn-border: rgba(255,255,255,0.12);
+    }
+    html, body { height:100%; margin:0; background: radial-gradient(1200px 600px at 60% 20%, #0b1020 0%, #05070f 60%, #05060a 100%); color:var(--text); overflow:hidden; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Noto Sans, Arial; }
+    canvas { position: fixed; inset: 0; display: block; }
+    .panel { position: fixed; top: 18px; left: 18px; width: clamp(280px, 40vw, 460px); max-height: 80vh; overflow: auto; backdrop-filter: blur(8px); background: var(--panel-bg); border: 1px solid var(--panel-stroke); border-radius: 16px; padding: 16px 14px; z-index: 10; transition: transform .28s ease, opacity .28s ease; }
+    .panel.hidden { transform: translateY(110%); opacity: .96; }
+    .panel h1 { margin: 0 0 10px 0; font-size: 18px; font-weight: 700; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .row { display:grid; grid-template-columns:1fr; gap:8px; align-items:center; margin:10px 0; }
+    label { font-size: 12px; color: var(--muted); }
+    .ctrl { background: var(--btn-bg-2); border: 1px solid var(--btn-border); border-radius: 10px; padding: 10px; }
+    .inline { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    input[type="number"], input[type="text"] { width: 100%; max-width: 160px; font-size: 14px; color: var(--text); background: transparent; border: 1px solid var(--btn-border); border-radius: 8px; padding: 6px 8px; outline:none; }
+    input[type="range"] { width: 100%; }
+    select { background: transparent; color: var(--text); border: 1px solid var(--btn-border); border-radius: 8px; padding: 6px 8px; }
+    .btns { display:flex; gap:8px; margin-top:8px; flex-wrap:wrap; }
+    button { border: 1px solid var(--btn-border); border-radius: 10px; background: linear-gradient(180deg, var(--btn-bg), #0a0f1c); color: var(--text); padding: 10px 12px; font-size: 14px; cursor: pointer; }
+    button.primary { border-color: transparent; background: linear-gradient(135deg, var(--accent), var(--accent-2)); color: white; font-weight: 700; }
+    .legend { font-size: 11px; color: var(--muted); margin-top: 6px; }
+    .badge { display:inline-block; font-size:11px; padding:2px 6px; border-radius:999px; background:#1f2937; border:1px solid rgba(255,255,255,.12); }
+    /* Dock when panel hidden */
+    #togglePanel { position: fixed; right: 12px; top: 12px; z-index: 11; border: 1px solid var(--btn-border); border-radius: 999px; padding: 10px 12px; background: rgba(15,17,26,.6); color: #fff; backdrop-filter: blur(8px); display: block; }
+    .dock { position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); background: rgba(15,17,26,.85); color:#fff; border:1px solid var(--btn-border); border-radius: 999px; padding: 8px 12px; z-index:11; display:none; cursor:pointer; backdrop-filter: blur(8px); }
+    @media (max-width: 640px){ .panel{ top:auto; bottom:12px; left:12px; right:12px; width:auto; max-height: 54vh; padding:12px; } .btns button{ flex:1 1 calc(50% - 8px);} }
+  </style>
+</head>
+<body>
+  <canvas id="scene" aria-label="Fireworks canvas" role="img"></canvas>
+  <button id="togglePanel" aria-expanded="true" aria-controls="panel">收合面板</button>
+  <div id="panel" class="panel" role="group" aria-label="煙火控制面板">
+    <h1>煙火模擬器 <span id="fps" class="badge" title="每秒幀數 (FPS)">FPS --</span> <span id="perfState" class="badge" title="效能狀態">正常</span></h1>
+
+    <div class="row">
+      <div>
+        <label for="count">施放數量（每次）</label>
+        <div class="ctrl inline">
+          <input id="count" type="number" min="1" max="50" value="6" step="1" />
+          <span style="font-size:12px;color:#aab0c0">1–50</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label for="angle">施放角度（°）</label>
+        <div class="ctrl">
+          <div class="inline">
+            <input id="angle" type="range" min="-75" max="75" value="0" step="1"/>
+            <output id="angleOut">0°</output>
+          </div>
+          <div class="legend">以垂直向上 = 0°；正值向右、負值向左。</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label for="size">煙花大小</label>
+        <div class="ctrl">
+          <div class="inline">
+            <input id="size" type="range" min="1" max="5" value="3" step="1"/>
+            <output id="sizeOut">3</output>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label for="shape">爆開形狀</label>
+        <div class="ctrl">
+          <div class="inline">
+            <select id="shape">
+              <option value="circle">圓形（預設）</option>
+              <option value="ring">光環（空心圓）</option>
+              <option value="star">星形（五角）</option>
+              <option value="heart">愛心</option>
+              <option value="cross">十字</option>
+              <option value="spiral">螺旋</option>
+              <option value="smiley">笑臉</option>
+              <option value="butterfly">蝴蝶</option>
+              <option value="snowflake">雪花</option>
+              <option value="text">文字輪廓</option>
+              <option value="random">隨機</option>
+            </select>
+          </div>
+          <div class="legend">選擇煙火爆開的圖案。</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row" id="shapeTextRow">
+      <div>
+        <label for="shapeText">文字輪廓</label>
+        <div class="ctrl inline">
+          <input id="shapeText" type="text" value="LOVE" maxlength="20" />
+          <label for="shapeTextSize" style="margin-left:8px;">大小</label>
+          <input id="shapeTextSize" type="number" min="40" max="300" value="140" step="10"/>
+        </div>
+        <div class="legend">當形狀選「文字輪廓」或「隨機」且有填字時生效。</div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label for="maxp">最大粒子數限制</label>
+        <div class="ctrl inline">
+          <input id="maxp" type="number" min="500" max="20000" value="4000" step="100" />
+          <span style="font-size:12px;color:#aab0c0">500–20000</span>
+        </div>
+        <div class="legend">達到上限時，會優先移除最舊的粒子以節省資源。</div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="ctrl inline">
+        <label for="auto" style="margin:0">自動施放</label>
+        <input id="auto" type="checkbox"/>
+        <span style="font-size:12px;color:#aab0c0">頻率</span>
+        <input id="rate" type="number" min="1" max="10" value="2" step="1" title="每秒施放次數" />
+        <span style="font-size:12px;color:#aab0c0">次/秒</span>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="ctrl inline">
+        <label for="low" style="margin:0">低配模式</label>
+        <input id="low" type="checkbox"/>
+        <span class="legend">關閉發光並降低粒子上限。</span>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label for="wind">風力/風向（水平加速度）</label>
+        <div class="ctrl">
+          <div class="inline">
+            <input id="wind" type="range" min="-300" max="300" value="0" step="5"/>
+            <output id="windOut">0</output>
+          </div>
+          <div class="legend">單位約為 px/s²；負值左、正值右。</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>陣風模式</label>
+        <div class="ctrl">
+          <div class="inline">
+            <label for="gustOn" style="margin:0">啟用</label>
+            <input id="gustOn" type="checkbox"/>
+            <label for="gustAmp" style="margin:0 0 0 8px;">強度</label>
+            <input id="gustAmp" type="range" min="0" max="300" value="80" step="5"/>
+            <output id="gustAmpOut">80</output>
+            <label for="gustFreq" style="margin:0 0 0 8px;">頻率(Hz)</label>
+            <input id="gustFreq" type="range" min="0.1" max="1.5" value="0.3" step="0.05"/>
+            <output id="gustFreqOut">0.30</output>
+          </div>
+          <div class="legend">隨機且平滑的水平風力變化。</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>依刷新率自調發射量</label>
+        <div class="ctrl inline">
+          <label for="autoAdj" style="margin:0">啟用</label>
+          <input id="autoAdj" type="checkbox"/>
+          <label for="targetFps" style="margin-left:8px;">目標 FPS</label>
+          <input id="targetFps" type="number" min="30" max="240" value="60" step="5"/>
+          <span class="legend">依 FPS 自動縮放每次發射數量。</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="btns">
+      <button id="launch" class="primary">發射（空白鍵）</button>
+      <button id="clear">清除</button>
+      <button id="resetPerf">重置效能降級</button>
+    </div>
+  </div>
+
+  <div id="panelDock" class="dock" role="button" aria-controls="panel" aria-label="展開控制面板">展開控制面板</div>
+
+  <script>
+  (function(){
+    const canvas = document.getElementById('scene');
+    const ctx = canvas.getContext('2d');
+
+    const panel = document.getElementById('panel');
+    const toggleBtn = document.getElementById('togglePanel');
+    const dock = document.getElementById('panelDock');
+
+    // UI refs
+    const countEl = document.getElementById('count');
+    const angleEl = document.getElementById('angle');
+    const angleOut = document.getElementById('angleOut');
+    const sizeEl  = document.getElementById('size');
+    const sizeOut = document.getElementById('sizeOut');
+    const autoEl  = document.getElementById('auto');
+    const rateEl  = document.getElementById('rate');
+    const maxpEl  = document.getElementById('maxp');
+    const lowEl   = document.getElementById('low');
+    const windEl  = document.getElementById('wind');
+    const windOut = document.getElementById('windOut');
+    const gustOnEl = document.getElementById('gustOn');
+    const gustAmpEl = document.getElementById('gustAmp');
+    const gustAmpOut = document.getElementById('gustAmpOut');
+    const gustFreqEl = document.getElementById('gustFreq');
+    const gustFreqOut = document.getElementById('gustFreqOut');
+    const autoAdjEl = document.getElementById('autoAdj');
+    const targetFpsEl = document.getElementById('targetFps');
+    const shapeEl = document.getElementById('shape');
+    const shapeTextEl = document.getElementById('shapeText');
+    const shapeTextSizeEl = document.getElementById('shapeTextSize');
+    const btnLaunch = document.getElementById('launch');
+    const btnClear  = document.getElementById('clear');
+    const btnResetPerf = document.getElementById('resetPerf');
+    const fpsBadge = document.getElementById('fps');
+    const perfState = document.getElementById('perfState');
+
+    const PANEL_KEY = 'fw_panel_hidden_v2';
+
+    // Physics
+    const GRAVITY = 500;
+    const AIR_DRAG = 0.98;
+    const PARTICLE_DRAG = 0.985;
+
+    const rockets = [];
+    const particles = [];
+
+    const config = {
+      count: 6,
+      angleDeg: 0,
+      size: 3,
+      shape: 'circle',
+      shapeText: 'LOVE',
+      shapeTextSize: 140,
+      auto: false,
+      rate: 2,
+      baseMaxParticles: 4000,
+      maxParticles: 4000,
+      glow: true,
+      low: false,
+      wind: 0,
+      gustOn: false,
+      gustAmp: 80,
+      gustFreq: 0.3,
+      autoAdjust: false,
+      targetFps: 60,
+      degraded: false
+    };
+
+    function clamp(v,a,b){ return Math.min(Math.max(v,a),b) }
+    function rand(min,max){ return Math.random()*(max-min)+min }
+
+    function syncFromUI(){
+      config.count = clamp(parseInt(countEl.value||'6',10),1,50);
+      config.angleDeg = clamp(parseInt(angleEl.value||'0',10),-75,75);
+      config.size = clamp(parseInt(sizeEl.value||'3',10),1,5);
+      config.shape = shapeEl ? shapeEl.value : 'circle';
+      config.shapeText = shapeTextEl ? shapeTextEl.value : 'LOVE';
+      config.shapeTextSize = shapeTextSizeEl ? clamp(parseInt(shapeTextSizeEl.value||'140',10),40,300) : 140;
+      config.auto = !!autoEl.checked;
+      config.rate = clamp(parseFloat(rateEl.value||'2'),1,10);
+      config.baseMaxParticles = clamp(parseInt(maxpEl.value||'4000',10),500,20000);
+      config.wind = clamp(parseFloat(windEl.value||'0'),-300,300);
+      config.low = !!lowEl.checked;
+      config.gustOn = !!gustOnEl.checked;
+      config.gustAmp = clamp(parseFloat(gustAmpEl.value||'80'),0,300);
+      config.gustFreq = clamp(parseFloat(gustFreqEl.value||'0.3'),0.1,1.5);
+      config.autoAdjust = !!autoAdjEl.checked;
+      config.targetFps = clamp(parseInt(targetFpsEl.value||'60',10),30,240);
+      angleOut.textContent = config.angleDeg + '°';
+      sizeOut.textContent = String(config.size);
+      windOut.textContent = String(config.wind);
+      gustAmpOut.textContent = String(Math.round(config.gustAmp));
+      gustFreqOut.textContent = String(config.gustFreq.toFixed(2));
+      applyPerfMode();
+    }
+    [countEl,angleEl,sizeEl,autoEl,rateEl,maxpEl,lowEl,windEl,gustOnEl,gustAmpEl,gustFreqEl,autoAdjEl,targetFpsEl,shapeEl,shapeTextEl,shapeTextSizeEl].forEach(el=>{
+      if(!el) return;
+      el.addEventListener('input', syncFromUI);
+      el.addEventListener('change', syncFromUI);
+    });
+
+    // Panel toggle + dock
+    function updatePanelUI(hidden){
+      panel.classList.toggle('hidden', hidden);
+      toggleBtn.setAttribute('aria-expanded', String(!hidden));
+      toggleBtn.textContent = hidden ? '展開面板' : '收合面板';
+      if (dock) dock.style.display = hidden ? 'block' : 'none';
+      try { localStorage.setItem(PANEL_KEY, hidden ? '1' : '0'); } catch(e) {}
+    }
+    toggleBtn.addEventListener('click', () => {
+      updatePanelUI(!panel.classList.contains('hidden'));
+    });
+    if (dock) dock.addEventListener('click', () => updatePanelUI(false));
+
+    // Canvas DPI
+    function fitCanvas(){
+      const w = innerWidth, h = innerHeight, dpr = devicePixelRatio||1;
+      canvas.width = Math.floor(w*dpr); canvas.height = Math.floor(h*dpr);
+      canvas.style.width = w+'px'; canvas.style.height = h+'px';
+      ctx.setTransform(dpr,0,0,dpr,0,0);
+    }
+    addEventListener('resize', fitCanvas);
+
+    // Gust model
+    let gustVal = 0, gustTarget = 0, gustTimer = 0;
+    function updateGust(dt){
+      if(!config.gustOn){ gustVal = 0; return; }
+      gustTimer -= dt;
+      const interval = 1/Math.max(0.1, config.gustFreq);
+      if(gustTimer <= 0){
+        gustTimer += interval;
+        gustTarget = (Math.random()*2-1) * config.gustAmp;
+      }
+      const smoothing = 3.5;
+      gustVal += (gustTarget - gustVal) * (1 - Math.exp(-smoothing * dt));
+    }
+    let currentWind = 0;
+
+    // Shapes helpers
+    function _unit(x,y){ const m=Math.hypot(x,y)||1; return {x:x/m, y:y/m}; }
+    function _randomShape(){
+      const pool = ['circle','ring','star','heart','cross','spiral','smiley','butterfly','snowflake'];
+      if (config.shapeText && config.shapeText.trim()) pool.push('text');
+      return pool[Math.floor(Math.random()*pool.length)];
+    }
+    const _off = document.createElement('canvas'); _off.width = 512; _off.height = 256;
+    const _octx = _off.getContext('2d');
+    function textOutlineVectors(str, count, pxSize){
+      const w=_off.width, h=_off.height;
+      _octx.clearRect(0,0,w,h);
+      _octx.fillStyle = 'black'; _octx.fillRect(0,0,w,h);
+      _octx.textAlign='center'; _octx.textBaseline='middle';
+      _octx.lineJoin='round'; _octx.lineCap='round';
+      _octx.font = `bold ${pxSize}px system-ui, -apple-system, Segoe UI, Roboto, Noto Sans, Arial`;
+      _octx.strokeStyle='white'; _octx.lineWidth = Math.max(2, pxSize*0.08);
+      _octx.strokeText(str, w/2, h/2);
+      const img = _octx.getImageData(0,0,w,h).data;
+      const pts = [];
+      const step = Math.max(3, Math.floor(Math.sqrt((w*h)/Math.max(1,count))/2));
+      for(let y=0;y<h;y+=step){
+        for(let x=0;x<w;x+=step){
+          const a = img[(y*w + x)*4 + 3];
+          if (a > 128) pts.push({x,y});
+        }
+      }
+      if (pts.length === 0) return burstVectors('ring', count);
+      const cx = w/2, cy = h/2;
+      const dirs = [];
+      for(let i=0;i<count;i++){
+        const p = pts[Math.floor(Math.random()*pts.length)];
+        const u = _unit((p.x - cx)/(w/2), (p.y - cy)/(h/2));
+        dirs.push(u);
+      }
+      return dirs;
+    }
+    function burstVectors(shape, count){
+      const dirs = [];
+      const TAU = Math.PI*2;
+      const jitter = (a)=> a + (Math.random()-0.5)*0.09;
+      if (shape === 'random') return burstVectors(_randomShape(), count);
+      if (shape === 'ring' || shape === 'circle'){
+        for(let i=0;i<count;i++){ const t=(i/count)*TAU; const a=jitter(t); dirs.push({x:Math.cos(a), y:Math.sin(a)}); } return dirs;
+      }
+      if (shape === 'star'){
+        const points = 5;
+        for(let i=0;i<count;i++){ const arm=Math.floor(Math.random()*points); const base=(arm/points)*TAU; const a=base+(Math.random()-0.5)*0.22; dirs.push({x:Math.cos(a), y:Math.sin(a)}); } return dirs;
+      }
+      if (shape === 'cross'){
+        const axes=[0, Math.PI/2, Math.PI, 3*Math.PI/2];
+        for(let i=0;i<count;i++){ const a=axes[Math.floor(Math.random()*axes.length)] + (Math.random()-0.5)*0.18; dirs.push({x:Math.cos(a), y:Math.sin(a)}); } return dirs;
+      }
+      if (shape === 'spiral'){
+        const turns=2.0;
+        for(let i=0;i<count;i++){ const t=i/count; const a=t*TAU*turns; const r=0.3+0.7*t; const u=_unit(Math.cos(a)*r, Math.sin(a)*r); dirs.push(u); } return dirs;
+      }
+      if (shape === 'heart'){
+        for(let i=0;i<count;i++){ const t=(i/count)*TAU; const x=16*Math.sin(t)**3; const y=-(13*Math.cos(t)-5*Math.cos(2*t)-2*Math.cos(3*t)-Math.cos(4*t)); const u=_unit(x,y); dirs.push(u); } return dirs;
+      }
+      if (shape === 'smiley'){
+        const face=Math.floor(count*0.6), eyes=Math.floor(count*0.15), mouth=count-face-eyes*2;
+        for(let i=0;i<face;i++){ const a=(i/face)*TAU; dirs.push({x:Math.cos(a), y:Math.sin(a)}); }
+        const eyeAngles=[Math.PI*0.75, Math.PI*0.25];
+        for(const ea of eyeAngles){ for(let i=0;i<eyes;i++){ const a=ea+(Math.random()-0.5)*0.18; dirs.push({x:Math.cos(a)*0.5, y:Math.sin(a)*0.5}); } }
+        for(let i=0;i<mouth;i++){ const a = (Math.PI*1.1) + (i/Math.max(1,mouth-1))*(Math.PI*1.9 - Math.PI*1.1); dirs.push({x:Math.cos(a)*0.9, y:Math.sin(a)*0.9}); }
+        return dirs;
+      }
+      if (shape === 'butterfly'){
+        for(let i=0;i<count;i++){
+          const t = (i/count) * TAU * 3;
+          const r = Math.exp(Math.cos(t)) - 2*Math.cos(4*t) + Math.sin((2*t - Math.PI)/24)**5;
+          const x = r * Math.sin(t);
+          const y = r * Math.cos(t);
+          const u = _unit(x,y);
+          dirs.push(u);
+        }
+        return dirs;
+      }
+      if (shape === 'snowflake'){
+        const arms = 6;
+        for(let i=0;i<count;i++){
+          const k = Math.floor(Math.random()*arms);
+          let a = (k/arms)*TAU + (Math.random()-0.5)*0.08;
+          if (Math.random()<0.35) a += (Math.random()<0.5?1:-1) * (Math.PI/12) * Math.random();
+          dirs.push({x:Math.cos(a), y:Math.sin(a)});
+        }
+        return dirs;
+      }
+      if (shape === 'text'){
+        const str = (config.shapeText || 'LOVE').slice(0,20);
+        const sz = config.shapeTextSize || 140;
+        return textOutlineVectors(str, count, sz);
+      }
+      for(let i=0;i<count;i++){ const a=(i/count)*TAU; dirs.push({x:Math.cos(a), y:Math.sin(a)}); }
+      return dirs;
+    }
+
+    class Rocket {
+      constructor(x,y,vx,vy,hue,size){
+        this.x=x; this.y=y; this.vx=vx; this.vy=vy; this.hue=hue; this.size=size;
+        this.dead=false; this.trail=[]; this.maxTrail=10; this.life=4;
+      }
+      update(dt){
+        this.life -= dt;
+        this.vx += currentWind * dt;
+        this.trail.push({x:this.x,y:this.y}); if(this.trail.length>this.maxTrail) this.trail.shift();
+        this.vy += GRAVITY*dt*-0.72; this.vx *= AIR_DRAG; this.vy *= AIR_DRAG;
+        this.x += this.vx*dt; this.y += this.vy*dt;
+        const top = canvas.height/(devicePixelRatio||1)*0.28;
+        if (this.vy>=0 || this.y<top || this.life<=0){ this.explode(); this.dead=true; }
+      }
+      draw(ctx){
+        ctx.beginPath();
+        for (let i=0;i<this.trail.length-1;i++){ const p=this.trail[i], n=this.trail[i+1];
+          ctx.strokeStyle = `hsla(${this.hue},100%,70%,${i/this.trail.length})`;
+          ctx.lineWidth=2; ctx.moveTo(p.x,p.y); ctx.lineTo(n.x,n.y); }
+        ctx.stroke();
+        ctx.beginPath(); ctx.fillStyle=`hsl(${this.hue},100%,85%)`; ctx.arc(this.x,this.y,2.2+this.size*0.4,0,Math.PI*2); ctx.fill();
+      }
+      explode(){
+        const base = 50 + this.size * 45;
+        const count = Math.floor(base * (0.8 + Math.random()*0.4));
+        const speedBase = 120 + this.size * 60;
+        const chosen = config.shape;
+        const dirs = burstVectors(chosen, count);
+        for (let i=0;i<dirs.length;i++){
+          const d = dirs[i];
+          const spd = speedBase * (0.6 + Math.random()*0.8);
+          const vx = d.x * spd;
+          const vy = d.y * spd;
+          const sat = 80 + Math.random()*20;
+          const light = 50 + Math.random()*20;
+          particles.push(new Particle(this.x, this.y, vx, vy, this.hue + (Math.random()*40-20), sat, light, this.size));
+        }
+        enforceParticleCap();
+      }
+    }
+
+    class Particle {
+      constructor(x,y,vx,vy,h,s,l,size){
+        this.x=x; this.y=y; this.vx=vx; this.vy=vy; this.h=h; this.s=s; this.l=l; this.size=size;
+        this.life=1; this.decay=0.9+Math.random()*0.15; this.gravity=GRAVITY*0.45; this.alpha=1; this.spark=Math.random()<0.25; this.age=0; this.maxAge=4+Math.random()*2;
+      }
+      update(dt){
+        this.age+=dt;
+        this.vx += currentWind * dt;
+        this.vx*=PARTICLE_DRAG; this.vy*=PARTICLE_DRAG; this.vy+=this.gravity*dt/60; this.x+=this.vx*dt; this.y+=this.vy*dt;
+        this.life*=Math.pow(this.decay,dt*60); this.alpha=Math.max(0,this.life-0.02);
+      }
+      draw(ctx){
+        if(this.alpha<=0||this.age>this.maxAge) return;
+        const r=1.2+this.size*0.6;
+        ctx.beginPath(); ctx.fillStyle=`hsla(${this.h},${this.s}%,${this.l}%,${this.alpha})`; ctx.arc(this.x,this.y,r,0,Math.PI*2); ctx.fill();
+        if(this.spark && Math.random()<0.08){ ctx.beginPath(); ctx.fillStyle=`hsla(${this.h},${this.s}%,95%,${this.alpha})`; ctx.arc(this.x,this.y,r*0.6,0,Math.PI*2); ctx.fill(); }
+      }
+    }
+
+    function clearScene(){ particles.length=0; rockets.length=0; ctx.clearRect(0,0,canvas.width,canvas.height); }
+    function enforceParticleCap(){ const cap=config.maxParticles; const excess=particles.length-cap; if(excess>0) particles.splice(0,excess); }
+
+    function applyPerfMode(){
+      if(config.low || config.degraded){
+        config.maxParticles = Math.min(config.baseMaxParticles, 1200);
+        config.glow = false;
+        perfState.textContent = config.degraded ? '自動降級' : '低配模式';
+      } else {
+        config.maxParticles = config.baseMaxParticles;
+        config.glow = true;
+        perfState.textContent = '正常';
+      }
+      enforceParticleCap();
+    }
+
+    // FPS monitor & auto degrade
+    let lastTs=0, fpsEMA=60, belowCounter=0;
+    function updateFps(ts){
+      if(!lastTs){ lastTs=ts; return; }
+      const dt=(ts-lastTs)/1000; lastTs=ts; const fps=1/Math.max(1e-6,dt);
+      fpsEMA = fpsEMA*0.9 + fps*0.1;
+      fpsBadge.textContent = 'FPS ' + Math.round(fpsEMA);
+      const THRESH = 45, WINDOW = 2.0;
+      if(fpsEMA < THRESH){ belowCounter += dt; } else { belowCounter = Math.max(0, belowCounter - dt*0.5); }
+      if(!config.degraded && belowCounter > WINDOW){ config.degraded = true; applyPerfMode(); }
+    }
+
+    // FPS-aware scaling
+    function scaledCount(base){
+      if(!config.autoAdjust) return base;
+      const f = (typeof fpsEMA === 'number' && isFinite(fpsEMA)) ? fpsEMA : 60;
+      const scale = clamp(config.targetFps / Math.max(30, f), 0.5, 2.0);
+      return Math.max(1, Math.round(base * scale));
+    }
+
+    function launch(count=config.count, angleDeg=config.angleDeg, size=config.size){
+      let c = scaledCount(count);
+      const w=innerWidth, h=innerHeight;
+      const baseSpeed=460+size*60; const rad=angleDeg*Math.PI/180;
+      const vxBase=Math.sin(rad)*baseSpeed, vyBase=-Math.cos(rad)*baseSpeed;
+      for(let i=0;i<c;i++){
+        const x=w*0.5+rand(-w*0.12,w*0.12), y=h-10; const hue=(performance.now()*0.03+i*27+Math.random()*30)%360;
+        const vx=vxBase*rand(0.92,1.08)+rand(-30,30), vy=vyBase*rand(0.92,1.08)+rand(-30,30);
+        rockets.push(new Rocket(x,y,vx,vy,hue,size));
+      }
+    }
+
+    // Events
+    btnLaunch.addEventListener('click', ()=>launch());
+    btnClear.addEventListener('click', clearScene);
+    btnResetPerf.addEventListener('click', ()=>{ config.degraded=false; belowCounter=0; applyPerfMode(); });
+
+    addEventListener('keydown', (e) => {
+      const key = (e.key || '').toLowerCase();
+      if (e.code === 'Space' || key === ' ') { e.preventDefault(); launch(); }
+    }, {passive:false});
+
+    // Main loop
+    let last=0, autoAcc=0;
+    function frame(ts){
+      updateFps(ts);
+      if(!last) last=ts; const dt=Math.min(0.033,(ts-last)/1000); last=ts;
+
+      updateGust(dt);
+      currentWind = config.wind + (config.gustOn ? gustVal : 0);
+
+      ctx.globalCompositeOperation='source-over';
+      ctx.fillStyle='rgba(5,7,15,0.28)';
+      ctx.fillRect(0,0,canvas.width,canvas.height);
+      ctx.globalCompositeOperation = (config.glow ? 'lighter' : 'source-over');
+
+      for(let i=rockets.length-1;i>=0;i--){ const r=rockets[i]; r.update(dt); r.draw(ctx); if(r.dead) rockets.splice(i,1); }
+      for(let i=particles.length-1;i>=0;i--){ const p=particles[i]; p.update(dt); p.draw(ctx); if(p.alpha<=0||p.age>p.maxAge||p.y>innerHeight+120) particles.splice(i,1); }
+      enforceParticleCap();
+
+      if(config.auto){
+        autoAcc+=dt; const interval=1/config.rate;
+        while(autoAcc>=interval){ autoAcc-=interval;
+          const base = Math.max(1, Math.round(config.count*0.6+Math.random()*config.count*0.6));
+          launch(base, config.angleDeg+rand(-8,8), config.size);
+        }
+      } else { autoAcc=0; }
+
+      requestAnimationFrame(frame);
+    }
+
+    function init(){
+      syncFromUI();
+      fitCanvas();
+      let hidden=false; try{ hidden = localStorage.getItem(PANEL_KEY)==='1'; }catch(e){}
+      updatePanelUI(hidden);
+      setTimeout(()=>launch(10,0,3),250);
+      requestAnimationFrame(frame);
+    }
+    init();
+  })();
+  </script>
+</body>
+</html>
