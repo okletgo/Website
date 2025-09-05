@@ -40,6 +40,11 @@
   </style>
 </head>
 <body>
+  background-image: url("./images/background.jpg"); // 圖片路徑
+  background-repeat: no-repeat; // 可選：設定圖片不重複 
+  background-position: center; // 可選：圖片置中 
+  background-size: cover; // 可選：圖片將覆蓋整個元素
+  <img src="images/background.jpg" />
   <canvas id="scene" aria-label="Fireworks canvas" role="img"></canvas>
   <button id="togglePanel" aria-expanded="true" aria-controls="panel">收合面板</button>
   <div id="panel" class="panel" role="group" aria-label="煙火控制面板">
@@ -49,7 +54,7 @@
       <div>
         <label for="count">施放數量（每次）</label>
         <div class="ctrl inline">
-          <input id="count" type="number" min="1" max="50" value="6" step="1" />
+          <input id="count" type="number" min="1" max="50" value="3" step="1" />
           <span style="font-size:12px;color:#aab0c0">1–50</span>
         </div>
       </div>
@@ -68,13 +73,22 @@
       </div>
     </div>
 
+    
+    <div class="row">
+      <label for="bgUpload">上傳背景圖片</label>
+      <div class="ctrl inline">
+        <input type="file" id="bgUpload" accept="image/*">
+      </div>
+      <div class="legend">選擇一張圖片作為背景。</div>
+    </div>
+
     <div class="row">
       <div>
         <label for="size">煙花大小</label>
         <div class="ctrl">
           <div class="inline">
             <input id="size" type="range" min="1" max="5" value="3" step="1"/>
-            <output id="sizeOut">3</output>
+            <output id="sizeOut">1</output>
           </div>
         </div>
       </div>
@@ -120,7 +134,7 @@
       <div>
         <label for="maxp">最大粒子數限制</label>
         <div class="ctrl inline">
-          <input id="maxp" type="number" min="500" max="20000" value="4000" step="100" />
+          <input id="maxp" type="number" min="500" max="20000" value="2000" step="100" />
           <span style="font-size:12px;color:#aab0c0">500–20000</span>
         </div>
         <div class="legend">達到上限時，會優先移除最舊的粒子以節省資源。</div>
@@ -130,7 +144,7 @@
     <div class="row">
       <div class="ctrl inline">
         <label for="auto" style="margin:0">自動施放</label>
-        <input id="auto" type="checkbox"/>
+        <input id="auto" type="checkbox" checked/>
         <span style="font-size:12px;color:#aab0c0">頻率</span>
         <input id="rate" type="number" min="1" max="10" value="2" step="1" title="每秒施放次數" />
         <span style="font-size:12px;color:#aab0c0">次/秒</span>
@@ -164,7 +178,7 @@
         <div class="ctrl">
           <div class="inline">
             <label for="gustOn" style="margin:0">啟用</label>
-            <input id="gustOn" type="checkbox"/>
+            <input id="gustOn" type="checkbox" checked/>
             <label for="gustAmp" style="margin:0 0 0 8px;">強度</label>
             <input id="gustAmp" type="range" min="0" max="300" value="80" step="5"/>
             <output id="gustAmpOut">80</output>
@@ -182,7 +196,7 @@
         <label>依刷新率自調發射量</label>
         <div class="ctrl inline">
           <label for="autoAdj" style="margin:0">啟用</label>
-          <input id="autoAdj" type="checkbox"/>
+          <input id="autoAdj" type="checkbox" checked/>
           <label for="targetFps" style="margin-left:8px;">目標 FPS</label>
           <input id="targetFps" type="number" min="30" max="240" value="60" step="5"/>
           <span class="legend">依 FPS 自動縮放每次發射數量。</span>
@@ -203,6 +217,23 @@
   (function(){
     const canvas = document.getElementById('scene');
     const ctx = canvas.getContext('2d');
+    let bgImage = null;
+
+    const bgUpload = document.getElementById('bgUpload');
+    bgUpload?.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = function(ev) {
+        const img = new Image();
+        img.onload = function() {
+          bgImage = img;
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    });
+
 
     const panel = document.getElementById('panel');
     const toggleBtn = document.getElementById('togglePanel');
@@ -535,7 +566,7 @@
     function launch(count=config.count, angleDeg=config.angleDeg, size=config.size){
       let c = scaledCount(count);
       const w=innerWidth, h=innerHeight;
-      const baseSpeed=460+size*60; const rad=angleDeg*Math.PI/180;
+      const baseSpeed=150+size*60; const rad=angleDeg*Math.PI/180;
       const vxBase=Math.sin(rad)*baseSpeed, vyBase=-Math.cos(rad)*baseSpeed;
       for(let i=0;i<c;i++){
         const x=w*0.5+rand(-w*0.12,w*0.12), y=h-10; const hue=(performance.now()*0.03+i*27+Math.random()*30)%360;
@@ -564,8 +595,12 @@
       currentWind = config.wind + (config.gustOn ? gustVal : 0);
 
       ctx.globalCompositeOperation='source-over';
-      ctx.fillStyle='rgba(5,7,15,0.28)';
-      ctx.fillRect(0,0,canvas.width,canvas.height);
+      if (bgImage) {
+        ctx.drawImage(bgImage, 0, 0, canvas.width, canvas.height);
+      } else {
+        ctx.fillStyle='rgba(5,7,15,0.28)';
+        ctx.fillRect(0,0,canvas.width,canvas.height);
+      }
       ctx.globalCompositeOperation = (config.glow ? 'lighter' : 'source-over');
 
       for(let i=rockets.length-1;i>=0;i--){ const r=rockets[i]; r.update(dt); r.draw(ctx); if(r.dead) rockets.splice(i,1); }
