@@ -16,8 +16,9 @@
       --btn-bg-2: #0b1220;
       --btn-border: rgba(255,255,255,0.12);
     }
-    html, body { height:100%; margin:0; background: radial-gradient(1200px 600px at 60% 20%, #0b1020 0%, #05070f 60%, #05060a 100%); color:var(--text); overflow:hidden; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Noto Sans, Arial; }
-    canvas { position: fixed; inset: 0; display: block; }
+ html, body { height:100%; margin:0; background: radial-gradient(1200px 600px at 60% 20%, #0b1020 0%, #05070f 60%, #05060a 100%); color:var(--text); overflow:hidden; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Noto Sans, Arial; } 
+     body { background-image: url("./images/background.jpg"); }
+     canvas { position: fixed; inset: 0; display: block; }
     .panel { position: fixed; top: 18px; left: 18px; width: clamp(280px, 40vw, 460px); max-height: 80vh; overflow: auto; backdrop-filter: blur(8px); background: var(--panel-bg); border: 1px solid var(--panel-stroke); border-radius: 16px; padding: 16px 14px; z-index: 10; transition: transform .28s ease, opacity .28s ease; }
     .panel.hidden { transform: translateY(110%); opacity: .96; }
     .panel h1 { margin: 0 0 10px 0; font-size: 18px; font-weight: 700; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
@@ -40,11 +41,6 @@
   </style>
 </head>
 <body>
-  background-image: url("./images/background.jpg"); // 圖片路徑
-  background-repeat: no-repeat; // 可選：設定圖片不重複 
-  background-position: center; // 可選：圖片置中 
-  background-size: cover; // 可選：圖片將覆蓋整個元素
-  <img src="./images/background.jpg" />
   <canvas id="scene" aria-label="Fireworks canvas" role="img"></canvas>
   <button id="togglePanel" aria-expanded="true" aria-controls="panel">收合面板</button>
   <div id="panel" class="panel" role="group" aria-label="煙火控制面板">
@@ -122,7 +118,7 @@
       <div>
         <label for="shapeText">文字輪廓</label>
         <div class="ctrl inline">
-          <input id="shapeText" type="text" value="LOVE" maxlength="20" />
+          <input id="shapeText" type="text" value="SUN" maxlength="20" />
           <label for="shapeTextSize" style="margin-left:8px;">大小</label>
           <input id="shapeTextSize" type="number" min="40" max="300" value="140" step="10"/>
         </div>
@@ -222,7 +218,14 @@
     const bgUpload = document.getElementById('bgUpload');
     bgUpload?.addEventListener('change', (e) => {
       const file = e.target.files[0];
-      if (!file) return;
+      if (!file) {
+        const imageDataUrl = event.target.result;
+        const imgElement = document.createElement('img');
+        imgElement.src = url("./images/background.jpg");
+        document.body.appendChild(imgElement); // 將圖片添加到頁面
+        return;
+      }
+
       const reader = new FileReader();
       reader.onload = function(ev) {
         const img = new Image();
@@ -282,7 +285,7 @@
       angleDeg: 0,
       size: 3,
       shape: 'circle',
-      shapeText: 'LOVE',
+      shapeText: 'SUN',
       shapeTextSize: 140,
       auto: false,
       rate: 2,
@@ -307,7 +310,7 @@
       config.angleDeg = clamp(parseInt(angleEl.value||'0',10),-75,75);
       config.size = clamp(parseInt(sizeEl.value||'3',10),1,5);
       config.shape = shapeEl ? shapeEl.value : 'circle';
-      config.shapeText = shapeTextEl ? shapeTextEl.value : 'LOVE';
+      config.shapeText = shapeTextEl ? shapeTextEl.value : 'SUN';
       config.shapeTextSize = shapeTextSizeEl ? clamp(parseInt(shapeTextSizeEl.value||'140',10),40,300) : 140;
       config.auto = !!autoEl.checked;
       config.rate = clamp(parseFloat(rateEl.value||'2'),1,10);
@@ -338,7 +341,7 @@
       toggleBtn.setAttribute('aria-expanded', String(!hidden));
       toggleBtn.textContent = hidden ? '展開面板' : '收合面板';
       if (dock) dock.style.display = hidden ? 'block' : 'none';
-      try { localStorage.setItem(PANEL_KEY, hidden ? '1' : '0'); } catch(e) {}
+      try { localStorage.setItem(PANEL_KEY, hidden ? '0' : '1'); } catch(e) {}
     }
     toggleBtn.addEventListener('click', () => {
       updatePanelUI(!panel.classList.contains('hidden'));
@@ -459,7 +462,7 @@
         return dirs;
       }
       if (shape === 'text'){
-        const str = (config.shapeText || 'LOVE').slice(0,20);
+        const str = (config.shapeText || 'SUN').slice(0,20);
         const sz = config.shapeTextSize || 140;
         return textOutlineVectors(str, count, sz);
       }
